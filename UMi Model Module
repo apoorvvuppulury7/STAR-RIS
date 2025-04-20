@@ -1,0 +1,45 @@
+//Urban Micro Model - Pathloss. Completely based on 3GPP TR 38.901 V14.3.0
+
+clc;
+clear;
+close all;
+
+%Parameters
+fc = 28e9;
+c = 3e8;
+lambda = c/fc;
+h_bs = 10;
+h_ut = 2;
+
+%Distance Calculations
+d_2d = linspace(10,1000,991)
+d_3d = sqrt(d_2d.^2  + (h_bs - h_ut).^2);
+d_bp = 2*pi*h_bs*h_ut*fc/c;
+
+%% Shadow fading standard deviations (dB)
+sigma_LOS = 4;
+sigma_NLOS = 7.82;
+
+%Probability of LOS Existence
+Pr_LOS = zeros(size(d_2d));
+for i = 1:length(d_2d)
+    if d_2d(i) <= 18
+        Pr_LOS(i) = 1;
+    else
+        Pr_LOS(i) = (18/d_2d(i)) + exp(-d_2d(i)/36)*(1 - 18/d_2d(i));
+    end
+end
+
+% LOS Probability Calculation
+Pr_LOS = zeros(size(d2D));
+for i = 1:length(d2D)
+    if d2D(i) <= 18
+        Pr_LOS(i) = 1;
+    else
+        Pr_LOS(i) = (18/d2D(i)) + exp(-d2D(i)/36)*(1 - 18/d2D(i));
+    end
+end
+
+%Path - Loss (NLOS)
+PL_NLOS = 22.4 + 35.3.*log10(d3D) + 21.3.*log10(fc/1e9) - 0.3.*(h_UT - 1.5);
+PL_NLOS = max(PL_LOS, PL_NLOS);
