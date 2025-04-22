@@ -16,6 +16,11 @@ d_2d = linspace(10,1000,991)
 d_3d = sqrt(d_2d.^2  + (h_bs - h_ut).^2);
 d_bp = 2*pi*h_bs*h_ut*fc/c;
 
+% Initialize result vectors
+Pr_LOS = zeros(size(d2D));
+PL_LOS = zeros(size(d2D));
+PL_NLOS = zeros(size(d2D));
+
 %% Shadow fading standard deviations (dB)
 sigma_LOS = 4;
 sigma_NLOS = 7.82;
@@ -30,16 +35,47 @@ for i = 1:length(d_2d)
     end
 end
 
-% LOS Probability Calculation
-Pr_LOS = zeros(size(d2D));
+%Loop through distances
 for i = 1:length(d2D)
-    if d2D(i) <= 18
-        Pr_LOS(i) = 1;
+    d = d2D(i);
+    d3 = d3D(i);
+
+    % LOS Probability (from 3GPP)
+    if d <= 18
+        Pr = 1;
     else
-        Pr_LOS(i) = (18/d2D(i)) + exp(-d2D(i)/36)*(1 - 18/d2D(i));
+        Pr = (18/d) + exp(-d/36) * (1 - 18/d);
     end
+    Pr_LOS(i) = Pr;
+
+    % LOS Path Loss
+    if d <= d_BP
+        PL_LOS(i) = 32.4 + 21*log10(d3) + 20*log10(fc / 1e9);
+    else
+        PL_LOS(i) = 32.4 + 40*log10(d3) + 20*log10(fc / 1e9) ...
+                    - 9.5*log10(d_BP^2 + (h_BS - h_UT)^2);
+    end
+
+    % NLOS Path Loss
+    PL_nlos_temp = 22.4 + 35.3*log10(d3) + 21.3*log10(fc / 1e9) - 0.3*(h_UT - 1.5);
+    PL_NLOS(i) = max(PL_LOS(i), PL_nlos_temp);
 end
 
-%Path - Loss (NLOS)
-PL_NLOS = 22.4 + 35.3.*log10(d3D) + 21.3.*log10(fc/1e9) - 0.3.*(h_UT - 1.5);
-PL_NLOS = max(PL_LOS, PL_NLOS);
+%Table for Monte Carlo Use
+PathLossTable = table(d2D, Pr_LOS, PL_LOS, PL_NLOS);
+
+%Display
+disp(PathLossTable(1:10,:));
+
+%Optional Plot
+figure;
+plot(d2D, PL_LOS, 'b', 'LineWidth', 2); hold on;
+plot(d2D, PL_NLOS, 'r--', 'LineWidth', 2);
+xlabel('2D Distance (m)');
+ylabel('Path Loss (dB)');
+title('LOS and NLOS Path Loss vs Distance (UMi Model)');
+legend('LOS Path Loss', 'NLOS Path Loss');
+grid on;
+
+
+
