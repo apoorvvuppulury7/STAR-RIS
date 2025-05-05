@@ -1,0 +1,355 @@
+%% STAR-RIS Numerical Simulation - This code implements the numerical simulations for "The Interplay of STAR-RIS and NOMA in Wireless 6G Networks" thesis, focusing on the impact of imperfect phase compensation on STAR-RIS performance under the Mode Switching (MS) protocol.
+
+clear all;
+close all;
+clc;
+
+%% System Parameters
+% STAR-RIS parameters
+N = 100;                  % Number of STAR-RIS elements
+M = 8;                    % Number of BS antennas
+
+% User Parameters
+U_t = 2;                  % Number of users in transmission space
+U_r = 2;                  % Number of users in reflection space
+
+% Channel Parameters
+f_c = 28.5;                 % Carrier frequency in GHz
+h_BS = 10;                % Height of BS in meters
+h_UT = 2;               % Height of user terminal in meters
+
+% Power Parameters
+P_t = 30;                 % Transmit power in dBm
+P_t_linear = 10^(P_t/10) * 1e-3;  % Transmit power in linear scale (W)
+noise_power_dBm = -80;    % Noise power in dBm
+noise_power = 10^(noise_power_dBm/10) * 1e-3;  % Noise power in linear scale (W)
+
+% Interference Parameters
+I_power_dBm = -90;        % Interference power in dBm
+I_power = 10^(I_power_dBm/10) * 1e-3;  % Interference power in linear scale (W)
+
+% Phase Error Parameters
+delta_range = 0:0.01:0.5;  % Phase error range in radians
+delta_degrees = delta_range * 180/pi;  % Convert to degrees for plotting
+
+%% Path Loss Calculation using UMi Model - Calculate path loss based on UMi model described in Chapter 1
+% Distance parameters
+d_BS_RIS = 50;            % Distance from BS to STAR-RIS in meters
+d_RIS_users_t = [80, 120];  % Distances from STAR-RIS to users in transmission space
+d_RIS_users_r = [60, 100];  % Distances from STAR-RIS to users in reflection space
+d_BS_users_direct = [100, 140, 70, 130];  % Direct distances from BS to all users
+
+% Breakpoint distance calculation
+c = 3e8;                  % Speed of light in m/s
+lambda = c/(f_c*1e9);     % Wavelength in meters
+d_BP = 4*(h_BS-1)*(h_UT-1)/lambda;  % Breakpoint distance
+
+% Calculate path loss for BS to STAR-RIS
+if d_BS_RIS <= d_BP
+    L_e_dB = 32.4 + 21*log10(d_BS_RIS) + 20*log10(f_c);
+else
+    a = sqrt(d_BP^2 + (h_BS-h_UT)^2);
+    L_e_dB = 32.4 + 40*log10(d_BS_RIS) + 20*log10(f_c) - 9.5*log10(a);
+end
+L_e = 10^(-L_e_dB/10);  % Convert from dB to linear
+
+% Calculate path loss for STAR-RIS to users
+L_t = zeros(U_t, 1);
+L_r = zeros(U_r, 1);
+L_d = zeros(U_t+U_r, 1);
+
+% Path loss for transmission side users
+for i = 1:U_t
+    if d_RIS_users_t(i) <= d_BP
+        L_t_dB = 32.4 + 21*log10(d_RIS_users_t(i)) + 20*log10(f_c);
+    else
+        a = sqrt(d_BP^2 + (h_BS-h_UT)^2);
+        L_t_dB = 32.4 + 40*log10(d_RIS_users_t(i)) + 20*log10(f_c) - 9.5*log10(a);
+    end
+    L_t(i) = 10^(-L_t_dB/10);  % Convert from dB to linear
+end
+
+% Path loss for reflection side users
+for i = 1:U_r
+    if d_RIS_users_r(i) <= d_BP
+        L_r_dB = 32.4 + 21*log10(d_RIS_users_r(i)) + 20*log10(f_c);
+    else
+        a = sqrt(d_BP^2 + (h_BS-h_UT)^2);
+        L_r_dB = 32.4 + 40*log10(d_RIS_users_r(i)) + 20*log10(f_c) - 9.5*log10(a);
+    end
+    L_r(i) = 10^(-L_r_dB/10);  % Convert from dB to linear
+end
+
+% Path loss for direct paths
+for i = 1:(U_t+U_r)
+    if d_BS_users_direct(i) <= d_BP
+        L_d_dB = 32.4 + 21*log10(d_BS_users_direct(i)) + 20*log10(f_c);
+    else
+        a = sqrt(d_BP^2 + (h_BS-h_UT)^2);
+        L_d_dB = 32.4 + 40*log10(d_BS_users_direct(i)) + 20*log10(f_c) - 9.5*log10(a);
+    end
+    L_d(i) = 10^(-L_d_dB/10);  % Convert from dB to linear
+end
+
+%% Calculate Channel State Information (CSI) and Data Rates
+% Calculate CSI values as defined in equations 4.2
+gamma_CSI_t = zeros(U_t, 1);
+gamma_CSI_r = zeros(U_r, 1);
+gamma_CSI = zeros(U_t+U_r, 1);
+
+for i = 1:U_t
+    gamma_CSI_t(i) = (P_t_linear * (L_t(i) * L_e)^2 * N^2) / (M * (I_power + noise_power));
+end
+
+for i = 1:U_r
+    gamma_CSI_r(i) = (P_t_linear * (L_r(i) * L_e)^2 * N^2) / (M * (I_power + noise_power));
+end
+
+for i = 1:(U_t+U_r)
+    gamma_CSI(i) = (P_t_linear * (L_d(i))^2) / (M * (I_power + noise_power));
+end
+
+% Calculate direct path rates (eq. 4.8)
+R_direct = log2(1 + gamma_CSI);
+
+% Initialize arrays for simulation results
+eta_t_lb = zeros(U_t, length(delta_range));
+eta_r_lb = zeros(U_r, length(delta_range));
+sinc_delta_UB = zeros(length(delta_range), 1);
+delta_UB = 0;
+
+%% Simulation 1: Lower Bound on Element Allocation Factor
+% Calculate lower bound on element allocation factor for different phase errors
+for d = 1:length(delta_range)
+    delta = delta_range(d);
+    sinc_squared = (sin(pi*delta)/(pi*delta))^2;
+    
+    % For transmission space users
+    for i = 1:U_t
+        eta_t_lb(i,d) = sqrt((2^R_direct(i) - 1) / (gamma_CSI_t(i) * sinc_squared));
+    end
+    
+    % For reflection space users
+    for i = 1:U_r
+        eta_r_lb(i,d) = sqrt((2^R_direct(i+U_t) - 1) / (gamma_CSI_r(i) * sinc_squared));
+    end
+    
+    % Calculate upper bound on phase error (eq. 4.17)
+    sum_term = 0;
+    for i = 1:U_t
+        sum_term = sum_term + sqrt((2^R_direct(i) - 1) / gamma_CSI_t(i));
+    end
+    for i = 1:U_r
+        sum_term = sum_term + sqrt((2^R_direct(i+U_t) - 1) / gamma_CSI_r(i));
+    end
+    sinc_delta_UB(d) = sum_term;
+    
+    % Ensure the allocation factors are valid (between 0 and 1)
+    for i = 1:U_t
+        eta_t_lb(i,d) = min(1, eta_t_lb(i,d));
+    end
+    for i = 1:U_r
+        eta_r_lb(i,d) = min(1, eta_r_lb(i,d));
+    end
+end
+
+%% Find Upper Bound on Phase Error
+% Find the maximum phase error that satisfies constraint (4.17)
+sinc_values = zeros(length(delta_range), 1);
+for d = 1:length(delta_range)
+    delta = delta_range(d);
+    if delta == 0
+        sinc_values(d) = 1;
+    else
+        sinc_values(d) = sin(pi*delta)/(pi*delta);
+    end
+end
+
+% Find the delta value where sinc(delta) >= sinc(delta_UB)
+for d = 1:length(delta_range)
+    if sinc_values(d) < sinc_delta_UB(1)  % Using the first value since sum_term should be constant
+        delta_UB_index = d - 1;
+        delta_UB = delta_range(delta_UB_index);
+        break;
+    end
+end
+
+if delta_UB == 0 && any(sinc_values < sinc_delta_UB(1))
+    delta_UB = delta_range(find(sinc_values < sinc_delta_UB(1), 1) - 1);
+end
+
+%% Simulation 2: Trade-off Between Element Allocation and Phase Error
+% Target rates (slightly higher than direct path)
+R_t_target = zeros(U_t, 1);
+R_r_target = zeros(U_r, 1);
+for i = 1:U_t
+    R_t_target(i) = 1.1 * R_direct(i);
+end
+for i = 1:U_r
+    R_r_target(i) = 1.1 * R_direct(i+U_t);
+end
+
+% Calculate required eta values for different phase errors and target rates
+eta_t_required = zeros(U_t, length(delta_range));
+eta_r_required = zeros(U_r, length(delta_range));
+
+for d = 1:length(delta_range)
+    delta = delta_range(d);
+    sinc_squared = (sin(pi*delta)/(pi*delta))^2;
+    if delta == 0
+        sinc_squared = 1;
+    end
+    
+    % For transmission space users
+    for i = 1:U_t
+        eta_t_required(i,d) = sqrt((2^R_t_target(i) - 1) / (gamma_CSI_t(i) * sinc_squared));
+    end
+    
+    % For reflection space users
+    for i = 1:U_r
+        eta_r_required(i,d) = sqrt((2^R_r_target(i) - 1) / (gamma_CSI_r(i) * sinc_squared));
+    end
+end
+
+%% Plot Results
+% Plot 1: Lower Bound on Element Allocation Factor vs Phase Error
+figure(1);
+hold on;
+colors = ['b', 'r', 'g', 'm'];
+for i = 1:U_t
+    plot(delta_degrees, eta_t_lb(i,:), [colors(i) '-'], 'LineWidth', 2);
+end
+for i = 1:U_r
+    plot(delta_degrees, eta_r_lb(i,:), [colors(i+U_t) '--'], 'LineWidth', 2);
+end
+if delta_UB > 0
+    plot([delta_UB*180/pi, delta_UB*180/pi], [0, 1], 'k--', 'LineWidth', 1.5);
+    text(delta_UB*180/pi + 1, 0.5, ['\delta_{UB} = ' num2str(delta_UB*180/pi) '°'], 'FontSize', 12);
+end
+xlabel('Phase Error \delta (degrees)', 'FontSize', 12);
+ylabel('Lower Bound on Element Allocation Factor \eta_{lb}', 'FontSize', 12);
+legend('T-User 1', 'T-User 2', 'R-User 1', 'R-User 2', 'Location', 'Best');
+title('Lower Bound on Element Allocation Factor vs Phase Error', 'FontSize', 14);
+grid on;
+xlim([0, delta_degrees(end)]);
+ylim([0, 1]);
+hold off;
+
+% Plot 2: Required Element Allocation for Target Rate vs Phase Error
+figure(2);
+hold on;
+for i = 1:U_t
+    plot(delta_degrees, eta_t_required(i,:), [colors(i) '-'], 'LineWidth', 2);
+end
+for i = 1:U_r
+    plot(delta_degrees, eta_r_required(i,:), [colors(i+U_t) '--'], 'LineWidth', 2);
+end
+if delta_UB > 0
+    plot([delta_UB*180/pi, delta_UB*180/pi], [0, 1], 'k--', 'LineWidth', 1.5);
+    text(delta_UB*180/pi + 1, 0.5, ['\delta_{UB} = ' num2str(delta_UB*180/pi) '°'], 'FontSize', 12);
+end
+xlabel('Phase Error \delta (degrees)', 'FontSize', 12);
+ylabel('Required Element Allocation Factor \eta', 'FontSize', 12);
+legend('T-User 1', 'T-User 2', 'R-User 1', 'R-User 2', 'Location', 'Best');
+title('Required Element Allocation for Target Rate vs Phase Error', 'FontSize', 14);
+grid on;
+xlim([0, delta_degrees(end)]);
+ylim([0, 1]);
+hold off;
+
+% Plot 3: Sinc Function and Upper Bound
+figure(3);
+hold on;
+plot(delta_degrees, sinc_values, 'b-', 'LineWidth', 2);
+plot(delta_degrees, sinc_delta_UB * ones(size(delta_degrees)), 'r--', 'LineWidth', 2);
+if delta_UB > 0
+    plot([delta_UB*180/pi, delta_UB*180/pi], [0, 1], 'k--', 'LineWidth', 1.5);
+    text(delta_UB*180/pi + 1, 0.5, ['\delta_{UB} = ' num2str(delta_UB*180/pi) '°'], 'FontSize', 12);
+end
+xlabel('Phase Error \delta (degrees)', 'FontSize', 12);
+ylabel('sinc(\delta)', 'FontSize', 12);
+legend('sinc(\delta)', 'Upper Bound Threshold', 'Location', 'Best');
+title('Upper Bound on Phase Error', 'FontSize', 14);
+grid on;
+xlim([0, delta_degrees(end)]);
+ylim([0, 1]);
+hold off;
+
+% Plot 4: Trade-off visualization - Sum of Allocation Factors
+figure(4);
+hold on;
+sum_eta_lb = zeros(length(delta_range), 1);
+sum_eta_required = zeros(length(delta_range), 1);
+for d = 1:length(delta_range)
+    sum_eta_lb(d) = sum(eta_t_lb(:,d)) + sum(eta_r_lb(:,d));
+    sum_eta_required(d) = sum(eta_t_required(:,d)) + sum(eta_r_required(:,d));
+end
+plot(delta_degrees, sum_eta_lb, 'b-', 'LineWidth', 2);
+plot(delta_degrees, sum_eta_required, 'r--', 'LineWidth', 2);
+plot(delta_degrees, ones(size(delta_degrees)), 'k-.', 'LineWidth', 1.5);
+if delta_UB > 0
+    plot([delta_UB*180/pi, delta_UB*180/pi], [0, 2], 'k--', 'LineWidth', 1.5);
+    text(delta_UB*180/pi + 1, 1.5, ['\delta_{UB} = ' num2str(delta_UB*180/pi) '°'], 'FontSize', 12);
+end
+xlabel('Phase Error \delta (degrees)', 'FontSize', 12);
+ylabel('Sum of Element Allocation Factors', 'FontSize', 12);
+legend('Lower Bound Sum', 'Target Rate Sum', 'Maximum Available (=1)', 'Location', 'Best');
+title('Trade-off Between Element Allocation and Phase Error', 'FontSize', 14);
+grid on;
+xlim([0, delta_degrees(end)]);
+ylim([0, 2]);
+hold off;
+
+%% Display Key Results
+fprintf('=== STAR-RIS Simulation Results ===\n');
+fprintf('System Parameters:\n');
+fprintf('  - STAR-RIS Elements: %d\n', N);
+fprintf('  - BS Antennas: %d\n', M);
+fprintf('  - Carrier Frequency: %d GHz\n', f_c);
+fprintf('  - Transmit Power: %d dBm\n', P_t);
+
+fprintf('\nPath Loss Values (dB):\n');
+fprintf('  - BS to STAR-RIS: %.2f dB\n', -10*log10(L_e));
+for i = 1:U_t
+    fprintf('  - STAR-RIS to T-User %d: %.2f dB\n', i, -10*log10(L_t(i)));
+end
+for i = 1:U_r
+    fprintf('  - STAR-RIS to R-User %d: %.2f dB\n', i, -10*log10(L_r(i)));
+end
+for i = 1:(U_t+U_r)
+    fprintf('  - BS to User %d (direct): %.2f dB\n', i, -10*log10(L_d(i)));
+end
+
+fprintf('\nDirect Path Data Rates (bps/Hz):\n');
+for i = 1:(U_t+U_r)
+    fprintf('  - User %d: %.4f\n', i, R_direct(i));
+end
+
+fprintf('\nUpper Bound on Phase Error: %.2f degrees\n', delta_UB*180/pi);
+
+fprintf('\nElement Allocation Factor Lower Bounds at δ = 0:\n');
+for i = 1:U_t
+    fprintf('  - T-User %d: %.4f\n', i, eta_t_lb(i,1));
+end
+for i = 1:U_r
+    fprintf('  - R-User %d: %.4f\n', i, eta_r_lb(i,1));
+end
+
+fprintf('\nElement Allocation Factor Lower Bounds at Upper Bound Phase Error:\n');
+if delta_UB > 0
+    delta_UB_index = find(delta_range >= delta_UB, 1);
+    for i = 1:U_t
+        fprintf('  - T-User %d: %.4f\n', i, eta_t_lb(i,delta_UB_index));
+    end
+    for i = 1:U_r
+        fprintf('  - R-User %d: %.4f\n', i, eta_r_lb(i,delta_UB_index));
+    end
+else
+    fprintf('  - Upper Bound on Phase Error could not be determined.\n');
+end
+
+fprintf('\nSum of Element Allocation Factors:\n');
+fprintf('  - At δ = 0: %.4f\n', sum_eta_lb(1));
+if delta_UB > 0
+    fprintf('  - At δ = δ_UB: %.4f\n', sum_eta_lb(delta_UB_index));
+end
