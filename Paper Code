@@ -29,15 +29,15 @@ I_power_dBm = -90;        % Interference power in dBm
 I_power = 10^(I_power_dBm/10) * 1e-3;  % Interference power in linear scale (W)
 
 % Phase Error Parameters
-delta_range = 0:0.01:0.5;  % Phase error range in radians
+delta_range = 0:0.01:pi/6;  % Phase error range in radians
 delta_degrees = delta_range * 180/pi;  % Convert to degrees for plotting
 
 %% Path Loss Calculation using UMi Model - Calculate path loss based on UMi model described in Chapter 1
 % Distance parameters
 d_BS_RIS = 50;            % Distance from BS to STAR-RIS in meters
-d_RIS_users_t = [80, 120];  % Distances from STAR-RIS to users in transmission space
-d_RIS_users_r = [60, 100];  % Distances from STAR-RIS to users in reflection space
-d_BS_users_direct = [100, 140, 70, 130];  % Direct distances from BS to all users
+d_RIS_users_t = [71.13,71.13];  % Distances from STAR-RIS to users in transmission space
+d_RIS_users_r = [71.13,71.13];  % Distances from STAR-RIS to users in reflection space
+d_BS_users_direct = [112.72,112.72,50.64,50.64];  % Direct distances from BS to all users
 
 % Breakpoint distance calculation
 c = 3e8;                  % Speed of light in m/s
@@ -98,15 +98,15 @@ gamma_CSI_r = zeros(U_r, 1);
 gamma_CSI = zeros(U_t+U_r, 1);
 
 for i = 1:U_t
-    gamma_CSI_t(i) = (P_t_linear * (L_t(i) * L_e)^2 * N^2) / (M * (I_power + noise_power));
+    gamma_CSI_t(i) = (P_t_linear * (L_t(i) * L_e)^2 * N^2)*M / ((I_power + noise_power));
 end
 
 for i = 1:U_r
-    gamma_CSI_r(i) = (P_t_linear * (L_r(i) * L_e)^2 * N^2) / (M * (I_power + noise_power));
+    gamma_CSI_r(i) = (P_t_linear * (L_r(i) * L_e)^2 * N^2)*M / ((I_power + noise_power));
 end
 
 for i = 1:(U_t+U_r)
-    gamma_CSI(i) = (P_t_linear * (L_d(i))^2) / (M * (I_power + noise_power));
+    gamma_CSI(i) = (P_t_linear * (L_d(i))^2)*M / ((I_power + noise_power));
 end
 
 % Calculate direct path rates (eq. 4.8)
