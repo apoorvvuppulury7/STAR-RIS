@@ -1,0 +1,58 @@
+#Path Loss/Interference Model
+Aim - 	a. Calculate Path Loss from one each BS to each user. Answer should be given in the form of a 2x2 path loss matrix.
+        b. Calculate Interference from each BS to each user. Answer should be given in the form of a 2x2 interference matrix.
+        c. Explain, or define, what is SNR and SINR (mathematically).
+
+
+% Define parameters
+c = 3e8; % Speed of light (m/s)
+freq = 2.4e9; % Frequency in Hz (2.4 GHz)
+lambda = c / freq; % Wavelength in meters
+
+% Positions of Base Stations (BS) and Users (UE)
+bs_positions = [0, 0; 100, 0]; % BS1 at (0,0), BS2 at (100,0)
+ue_positions = [50, 50; 150, 50]; % UE1 at (50,50), UE2 at (150,50)
+
+% Number of BS and UE
+n_bs = size(bs_positions, 1);
+n_ue = size(ue_positions, 1);
+
+% Initialize matrices
+path_loss_matrix = zeros(n_bs, n_ue);
+interference_matrix = zeros(n_bs, n_ue);
+
+% Calculate Path Loss Matrix
+for i = 1:n_bs
+    for j = 1:n_ue
+        d = sqrt((bs_positions(i,1) - ue_positions(j,1))^2 + ...
+                 (bs_positions(i,2) - ue_positions(j,2))^2); % Distance between BS and UE
+        path_loss_matrix(i,j) = 20 * log10(4 * pi * d / lambda); % Free-space path loss formula
+    end
+end
+
+% Assume transmitted power Pt and noise power Pn for interference calculation
+Pt = 10; % Transmitted power in dBm
+Pn = -90; % Noise power in dBm
+
+% Calculate Interference Matrix
+for i = 1:n_bs
+    for j = 1:n_ue
+        interference_power = 0;
+        for k = 1:n_bs
+            if k ~= i % Exclude the serving BS
+                d_interference = sqrt((bs_positions(k,1) - ue_positions(j,1))^2 + ...
+                                      (bs_positions(k,2) - ue_positions(j,2))^2);
+                interference_power = interference_power + ...
+                    Pt - path_loss_matrix(k,j); % Interference from other BSs
+            end
+        end
+        interference_matrix(i,j) = interference_power + Pn; % Add noise power to interference
+    end
+end
+
+% Display results
+disp('Path Loss Matrix (dB):');
+disp(path_loss_matrix);
+
+disp('Interference Matrix (dBm):');
+disp(interference_matrix);
