@@ -1,0 +1,111 @@
+Aim :- The task is to setup the basic code for a primitive RIS application setup, assuming only one base station and one user.
+
+% Constants and Setup
+h_BS = 10;           
+h_UT = 2;            
+f = 3e9;             
+c = 3e8;             
+lambda = c / f;      
+
+% Shadowing Factors 
+sf_LOS = 4;          
+sf_NLOS = 7.82;      
+
+% Location Coordinates [x, y]
+source = [-100, 0];          
+destination = [0, 0];        
+RIS = [0, -10];              
+
+%Distance Calculation
+d_BP = 4 * (h_BS - 1) * (h_UT - 1) * f / c;
+d2D_sd = norm(destination - source);              
+d3D_sd = sqrt(d2D_sd^2 + (h_BS - h_UT)^2);       
+ 
+% Define Path Loss Functions
+function PL_LOS = calc_LOS_path_loss(d2D, d3D, freq, d_BP, h_BS, h_UT)
+    if d2D <= d_BP
+        PL_LOS = 32.4 + 21 * log10(d3D) + 20 * log10(freq/1e9); 
+    else
+        PL_LOS = 32.4 + 40 * log10(d3D) + 20 * log10(freq/1e9) - 9.5 * log10((d3D)^2 + (h_BS - h_UT)^2); 
+    end
+end
+function PL_NLOS = calc_NLOS_path_loss(d3D_sd, freq, h_UT)
+    PL_NLOS = max(35.3 * log10(d3D_sd) + 22.4 + 21.3 * log10(freq/1e9) - 0.3 * (h_UT - 1.5), 32.4 + 21 * log10(d3D_sd) + 20 * log10(freq / 1e9));
+End
+
+% LOS and NLOS Path Loss Calculations with Shadowing
+PL_LOS_sd = calc_LOS_path_loss(d2D_sd, d3D_sd, f, d_BP, h_BS, h_UT) + sf_LOS * randn();
+fprintf('SD Path Loss (LOS): %.2f dB\n', PL_LOS_sd);
+PL_NLOS_sd = calc_NLOS_path_loss(d3D_sd, f, h_UT) + sf_NLOS * randn();
+fprintf('SD Path Loss (NLOS): %.2f dB\n', PL_NLOS_sd);
+
+% Blockage Indicator (0 = blockage present, 1 = no blockage)
+blockage_indicator = randi([0, 1]);
+if blockage_indicator == 0
+    PL_LOS_sd_final = PL_LOS_sd + 30; 
+else
+    PL_LOS_sd_final = PL_LOS_sd;
+end
+fprintf('Blockage Indicator (0 = blockage, 1 = no blockage): %d\n', blockage_indicator);
+
+% Final Path Loss (Source to Destination)
+PL_SD = max(PL_LOS_sd_final, PL_NLOS_sd);
+h_sd = 10^(-PL_SD / 20);
+fprintf('Final Source to Destination Path Loss: %.2f dB\n', PL_SD);
+fprintf('Source to Destination Channel Coefficient (h_sd): %.4e\n', h_sd);
+
+% Source to RIS Path Loss 
+d2D_sr = norm(RIS - source);
+d3D_sr = sqrt(d2D_sr^2 + (h_BS - h_BS)^2);  
+PL_sr = calc_LOS_path_loss(d2D_sr, d3D_sr, f, d_BP, h_BS, h_UT) + sf_LOS * randn();
+h_sr = 10^(-PL_sr / 20);                     
+fprintf('Source to RIS Path Loss: %.2f dB\n', PL_sr);
+fprintf('Source to RIS Channel Coefficient (h_sr): %.4e\n', h_sr);
+
+% RIS to Destination Path Loss 
+d2D_rd = norm(destination - RIS);            
+d3D_rd = sqrt(d2D_rd^2 + (h_BS - h_UT)^2);  
+PL_rd = calc_LOS_path_loss(d2D_rd, d3D_rd, f, d_BP, h_BS, h_UT) + sf_LOS * randn();
+h_rd = 10^(-PL_rd / 20);
+fprintf('RIS to Destination Path Loss: %.2f dB\n', PL_rd);
+fprintf('RIS to Destination Channel Coefficient (h_rd): %.4e\n\n', h_rd);
+
+% Beta Terms (Channel Gains)
+beta_sd = h_sd^2;   
+beta_sr = h_sr^2;   
+beta_rd = h_rd^2; 
+fprintf('Beta_SD: %.4e\n', beta_sd);
+fprintf('Beta_SR: %.4e\n', beta_sr);
+fprintf('Beta_RD: %.4e\n', beta_rd);
+
+% RIS Link Gain 
+N = 20*13;
+h_sr_irs = h_sr * ones(N,1);                 
+h_rd_irs = h_rd * ones(N,1);                 
+beta_IRS = (1/N) * sum(abs(h_sr_irs .* h_rd_irs))^2; 
+fprintf('Beta_IRS: %.4e\n\n', beta_IRS);
+
+% SNR and Capacity Calculations
+p_tdB = 35;                                  
+p_t = 10^((p_tdB - 30)/10);                  
+alpha = 1;                                   
+k = 1.38e-23;                                
+T = 298;                                     
+B = 10e6;                                   
+power_noise = k*T*B;    
+p_n_dB = 0.5*0mag2db(power_noise);
+              
+% SNR for Direct (SISO) and RIS-Assisted Links
+SNR_siso = (p_t * beta_sd) / power_noise; 
+display((p_n_dB));
+SNR_siso_dB = 0.5*mag2dB(SNR_siso);            
+fprintf('The SNR (SISO) in dB is: %.4f\n', SNR_siso_dB);
+SNR_total = (p_t * (sqrt(beta_sd) + N * alpha * sqrt(beta_IRS))^2) / power_noise; 
+SNR_total_dB = 0.5*mag2dB(SNR_total);        
+fprintf('The SNR (Combined) in dB is: %.4f\n', SNR_total_dB);
+
+% Capacity Calculations
+C_siso = B * log2(1 + SNR_siso);         
+fprintf('The channel capacity (SISO) is: %.4f MBps\n', C_siso / 8e6);   
+C_total = B * log2(1 + SNR_total);           
+fprintf('The channel capacity (Combined) is: %.4f MBps\n', C_total / 8e6);
